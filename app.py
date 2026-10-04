@@ -1,9 +1,7 @@
 import os
 import json
-import uuid
 import pdfplumber
 import docx
-import chromadb
 from google import genai
 from google.genai import types
 from flask import Flask, request, jsonify, render_template, Response, stream_with_context, send_from_directory
@@ -13,13 +11,11 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = os.path.abspath('uploads')
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# 1. main.json-லிருந்து API Key எடுத்தல்
+# 1. API Key Setup
 def load_api_key():
-
     env_key = os.environ.get("GEMINI_API_KEY")
     if env_key:
         return env_key
-
     json_path = 'main.json'
     if os.path.exists(json_path):
         with open(json_path, 'r', encoding='utf-8') as f:
@@ -29,91 +25,49 @@ def load_api_key():
 
 API_KEY = load_api_key()
 if not API_KEY:
-    raise ValueError("பிழை: main.json கோப்பில் API Key கிடைக்கவில்லை!")
+    raise ValueError("GEMINI_API_KEY கிடைக்கவில்லை!")
 
-# புதிய GenAI Client துவங்குதல்
 client = genai.Client(api_key=API_KEY)
 
-# 2. ChromaDB Setup
-CHROMA_PATH = "./chroma_db"
-chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
-collection = chroma_client.get_or_create_collection(name="multi_doc_chat")
-
+# பதிவேற்றப்பட்ட ஆவணங்களின் உரையைச் சேமிக்கும் பட்டியல்
+DOCUMENT_PAGES = []
 ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.txt'}
 
-# புதிய Embedding செயல்முறை
-def get_gemini_embedding(text):
-    try:
-        response = client.models.embed_content(
-            model="text-embedding-004",
-            contents=text
-        )
-        # முதல் embedding vector-ஐ எடுத்தல்
-        return response.embeddings[0].values
-    except Exception as e:
-        print(f"Embedding error: {e}")
-        return []
-
-def extract_and_chunk(file_path, filename):
+def extract_pages(file_path, filename):
     ext = os.path.splitext(filename)[1].lower()
-    chunks = []
-    
+    pages_data = []
     try:
         if ext == '.pdf':
             with pdfplumber.open(file_path) as pdf:
                 for idx, page in enumerate(pdf.pages):
                     text = page.extract_text() or ""
-                    for i in range(0, len(text), 600):
-                        snippet = text[i:i+700].strip()
-                        if snippet:
-                            chunks.append({
-                                'text': snippet,
-                                'metadata': {'source': filename, 'page': str(idx + 1)}
-                            })
-                            
+                    if text.strip():
+                        pages_data.append({
+                            'source': filename,
+                            'page': str(idx + 1),
+                            'text': text.strip()
+                        })
         elif ext in ['.docx', '.doc']:
             doc = docx.Document(file_path)
-            for idx, para in enumerate(doc.paragraphs):
-                text = para.text.strip()
-                if text:
-                    chunks.append({
-                        'text': text,
-                        'metadata': {'source': filename, 'page': f"Para {idx + 1}"}
-                    })
-                    
+            full_text = "\n".join([p.text.strip() for p in doc.paragraphs if p.text.strip()])
+            if full_text:
+                pages_data.append({
+                    'source': filename,
+                    'page': 'Full Document',
+                    'text': full_text
+                })
         elif ext == '.txt':
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
-                for idx, i in range(0, len(content), 600):
-                    snippet = content[i:i+700].strip()
-                    if snippet:
-                        chunks.append({
-                            'text': snippet,
-                            'metadata': {'source': filename, 'page': f"Sec {idx + 1}"}
-                        })
+                content = f.read().strip()
+                if content:
+                    pages_data.append({
+                        'source': filename,
+                        'page': 'Full Document',
+                        'text': content
+                    })
     except Exception as e:
-        print(f"Error parsing {filename}: {e}")
-        
-    return chunks
-
-def add_to_vector_db(chunks):
-    if not chunks:
-        return
-    documents = [c['text'] for c in chunks]
-    metadatas = [c['metadata'] for c in chunks]
-    ids = [str(uuid.uuid4()) for _ in chunks]
-
-    embeddings = []
-    for doc in documents:
-        emb = get_gemini_embedding(doc)
-        embeddings.append(emb)
-
-    collection.add(
-        documents=documents,
-        embeddings=embeddings,
-        metadatas=metadatas,
-        ids=ids
-    )
+        print(f"Error extracting {filename}: {e}")
+    return pages_data
 
 @app.route('/')
 def index():
@@ -125,6 +79,7 @@ def serve_file(filename):
 
 @app.route('/upload', methods=['POST'])
 def upload_docs():
+    global DOCUMENT_PAGES
     if 'files' not in request.files:
         return jsonify({'error': 'No files provided'}), 400
         
@@ -139,21 +94,26 @@ def upload_docs():
                 file_path = os.path.join(app.config['UPLOAD_FOLDER'], safe_name)
                 file.save(file_path)
                 
-                chunks = extract_and_chunk(file_path, safe_name)
-                add_to_vector_db(chunks)
+                extracted = extract_pages(file_path, safe_name)
+                # பழைய ஆவணத்தின் அதே பெயர் இருந்தால் நீக்கிவிட்டு புதியதைச் சேர்த்தல்
+                DOCUMENT_PAGES = [doc for doc in DOCUMENT_PAGES if doc['source'] != safe_name]
+                DOCUMENT_PAGES.extend(extracted)
+                
                 uploaded_files.append(safe_name)
 
+    print(f"Total document sections ready: {len(DOCUMENT_PAGES)}")
     return jsonify({'message': 'Success', 'files': uploaded_files})
 
 @app.route('/delete-file', methods=['POST'])
 def delete_file():
+    global DOCUMENT_PAGES
     data = request.json
     filename = data.get('filename')
     if not filename:
         return jsonify({'error': 'Filename required'}), 400
 
     try:
-        collection.delete(where={"source": filename})
+        DOCUMENT_PAGES = [item for item in DOCUMENT_PAGES if item['source'] != filename]
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(filename))
         if os.path.exists(file_path):
             os.remove(file_path)
@@ -161,7 +121,6 @@ def delete_file():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# Streaming Chat (SDK Best Practice முறை)
 @app.route('/chat', methods=['POST'])
 def chat():
     data = request.json
@@ -171,55 +130,49 @@ def chat():
     lang_text = "Natural, fluent Tamil (தமிழ்)" if language == 'ta-IN' else "Clear English"
 
     context_snippets = []
-    total_docs = collection.count()
+    for item in DOCUMENT_PAGES:
+        context_snippets.append(f"[Document: {item['source']} | Page: {item['page']}]\n{item['text']}")
 
-    if total_docs > 0:
-        query_embed = get_gemini_embedding(query)
-        if query_embed:
-            results = collection.query(
-                query_embeddings=[query_embed],
-                n_results=min(4, total_docs)
-            )
-
-            if results and 'documents' in results and len(results['documents']) > 0:
-                for doc, meta in zip(results['documents'][0], results['metadatas'][0]):
-                    context_snippets.append(f"[Source: {meta['source']} | Page: {meta['page']}]\n{doc}")
-
-    final_context = "\n\n".join(context_snippets).strip()
+    final_context = "\n\n---\n\n".join(context_snippets).strip()
+    print(f"Final Context Length: {len(final_context)} characters")
 
     if final_context:
         system_instruction = f"""You are an intelligent document assistant.
-Answer accurately using ONLY the provided context. Use Markdown formatting.
-Always cite the source files and pages at the end like:
+Analyze and answer accurately using the provided document text below. Use Markdown formatting.
+Whenever you provide facts or answers, always cite the source file and page at the end of that section like:
 Sources: [filename, Page X]
 
-Language: Output strictly in {lang_text}.
+Language Rule: Output strictly in {lang_text}.
 
-Context:
+Available Documents:
 {final_context}"""
     else:
         system_instruction = f"""You are a helpful general assistant.
 No documents are uploaded yet. Answer normally without citing any sources or page numbers.
-Language: Output strictly in {lang_text}."""
+Language Rule: Output strictly in {lang_text}."""
 
     def generate():
-        try:
-            # 1. Chat session உருவாக்குதல்
-            chat_session = client.chats.create(
-                model="gemini-3.5-flash-lite",
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction
+        models_to_try = ['gemini-3.5-flash-lite']
+        for model_name in models_to_try:
+            try:
+                chat_session = client.chats.create(
+                    model=model_name,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_instruction
+                    )
                 )
-            )
-
-            # 2. send_message_stream மூலம் ஸ்ட்ரீம் செய்தல் (பரிந்துரைக்கப்பட்ட முறை)
-            response = chat_session.send_message_stream(query)
-
-            for chunk in response:
-                if chunk.text:
-                    yield chunk.text
-        except Exception as e:
-            yield f"\n[Error: {str(e)}]"
+                response = chat_session.send_message_stream(query)
+                for chunk in response:
+                    if chunk.text:
+                        yield chunk.text
+                return
+            except Exception as e:
+                if "503" in str(e):
+                    continue
+                else:
+                    yield f"\n[Error: {str(e)}]"
+                    return
+        yield "\n[Error: சர்வர் பயன்பாட்டு சுமை அதிகமாக உள்ளது. சிறிது நேரம் கழித்து முயற்சிக்கவும்.]"
 
     return Response(stream_with_context(generate()), mimetype='text/plain')
 
