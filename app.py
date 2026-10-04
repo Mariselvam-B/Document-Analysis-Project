@@ -15,6 +15,11 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # 1. main.json-லிருந்து API Key எடுத்தல்
 def load_api_key():
+
+    env_key = os.environ.get("GEMINI_API_KEY")
+    if env_key:
+        return env_key
+
     json_path = 'main.json'
     if os.path.exists(json_path):
         with open(json_path, 'r', encoding='utf-8') as f:

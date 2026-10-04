@@ -4,3 +4,4 @@ pdfplumber
 python-docx
 google-genai
 werkzeug
+gunicorn
