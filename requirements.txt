@@ -1,0 +1,6 @@
+flask
+chromadb
+pdfplumber
+python-docx
+google-genai
+werkzeug

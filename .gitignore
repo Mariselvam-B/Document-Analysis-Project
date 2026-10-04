@@ -1,0 +1,6 @@
+main.json
+chroma_db/
+uploads/
+__pycache__/
+*.pyc
+.env

@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise Document AI Studio</title>
+    
+    <!-- Google Fonts & Modern Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Markdown Parser -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <style>
+        :root {
+            --bg-main: #0b0f17;
+            --sidebar-bg: #111827;
+            --card-bg: #1f2937;
+            --chat-bubble-bot: #161e2e;
+            --chat-bubble-user: #2563eb;
+            --accent: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.15);
+            --text-primary: #f9fafb;
+            --text-muted: #9ca3af;
+            --border: #374151;
+            --danger: #ef4444;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+        body { background-color: var(--bg-main); color: var(--text-primary); display: flex; height: 100vh; overflow: hidden; }
+
+        .app-layout { display: flex; width: 100vw; height: 100vh; }
+
+        /* Modern Sidebar */
+        .sidebar {
+            width: 320px;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            gap: 20px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #fff;
+        }
+        .brand-icon {
+            background: linear-gradient(135deg, #38bdf8, #3b82f6);
+            padding: 8px;
+            border-radius: 10px;
+            display: flex;
+        }
+
+        .btn-new-chat {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            color: #fff;
+            border: none;
+            padding: 12px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .btn-new-chat:hover { opacity: 0.9; transform: translateY(-1px); }
+
+        .section-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .upload-area {
+            border: 1.5px dashed var(--border);
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .upload-area:hover { border-color: var(--accent); background: var(--accent-glow); }
+
+        .file-list, .chat-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--card-bg);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.82rem;
+            border: 1px solid transparent;
+        }
+        .file-item:hover { border-color: var(--border); }
+        .file-item a { color: var(--accent); text-decoration: none; display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80%; }
+        
+        .delete-icon {
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .delete-icon:hover { color: var(--danger); transform: scale(1.1); }
+
+        .chat-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 12px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.03);
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .chat-item.active { background: var(--card-bg); border-left: 3px solid var(--accent); }
+        .chat-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80%; }
+
+        /* Main Workspace */
+        .workspace { flex: 1; display: flex; flex-direction: column; position: relative; background: var(--bg-main); }
+        .topbar {
+            padding: 16px 28px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(17, 24, 39, 0.6);
+            backdrop-filter: blur(10px);
+        }
+
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .message-row { display: flex; gap: 14px; max-width: 860px; width: 100%; margin: 0 auto; }
+        .message-row.user { justify-content: flex-end; }
+
+        .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+        }
+        .avatar.bot { background: linear-gradient(135deg, #0284c7, #2563eb); }
+
+        .bubble-content { display: flex; flex-direction: column; gap: 6px; max-width: 85%; }
+        
+        .bubble {
+            padding: 14px 18px;
+            border-radius: 14px;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+        .message-row.user .bubble { background-color: var(--chat-bubble-user); color: #fff; border-bottom-right-radius: 2px; }
+        .message-row.bot .bubble { background-color: var(--chat-bubble-bot); border: 1px solid var(--border); border-bottom-left-radius: 2px; }
+
+        /* Markdown Styles inside bot bubble */
+        .bubble p { margin-bottom: 8px; }
+        .bubble p:last-child { margin-bottom: 0; }
+        .bubble ul, .bubble ol { margin-left: 20px; margin-bottom: 8px; }
+        .bubble code { background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; font-size: 0.85em; }
+
+        .actions-toolbar { display: flex; gap: 8px; margin-top: 4px; }
+        .tool-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 0.75rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .tool-btn:hover { color: #fff; background: var(--card-bg); }
+        .tool-btn.active-speak { border-color: var(--danger); color: var(--danger); }
+
+        /* Input Bar */
+        .input-wrapper { max-width: 860px; width: 100%; margin: 0 auto 24px auto; padding: 0 24px; }
+        .input-bar {
+            background-color: var(--sidebar-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }
+        .input-bar input { flex: 1; background: transparent; border: none; outline: none; color: #fff; font-size: 0.95rem; }
+        
+        .circle-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: 0.2s;
+        }
+        .circle-btn:hover { background: var(--card-bg); color: #fff; }
+        .circle-btn.recording { background: rgba(239, 68, 68, 0.2); color: var(--danger); animation: pulse 1.5s infinite; }
+        .send-button { background: var(--chat-bubble-user); color: #fff; }
+        .send-button:hover { background: #1d4ed8; }
+
+        @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+    </style>
+</head>
+<body>
+
+<div class="app-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-icon"><i data-lucide="layers" style="width:20px; height:20px; color:#fff;"></i></div>
+            <span>DocuMind Studio</span>
+        </div>
+
+        <button class="btn-new-chat" onclick="createNewChat()">
+            <i data-lucide="plus" style="width:18px;"></i> புதிய உரையாடல்
+        </button>
+
+        <!-- Document Knowledge Base -->
+        <div>
+            <div class="section-label">ஆவணங்கள் (Knowledge Base)</div>
+            <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+                <i data-lucide="upload-cloud" style="width: 24px; color: var(--accent);"></i>
+                <p style="font-size:0.8rem; margin-top:6px; color:var(--text-muted);">PDF, DOCX, TXT சேர்க்க</p>
+                <input type="file" id="fileInput" accept=".pdf, .docx, .txt" multiple style="display: none;" onchange="uploadDocuments()">
+            </div>
+            <div id="fileList" class="file-list" style="margin-top: 10px;"></div>
+        </div>
+
+        <!-- Chat History -->
+        <div style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+            <div class="section-label">உரையாடல்கள் (History)</div>
+            <div id="chatHistoryList" class="chat-list" style="max-height: unset; flex:1;"></div>
+        </div>
+
+        <!-- Language Preference -->
+        <div>
+            <div class="section-label">Language / மொழி</div>
+            <select id="languageSelect" style="width: 100%; background: var(--card-bg); color: #fff; padding: 10px; border-radius: 8px; border: 1px solid var(--border); outline:none;">
+                <option value="en-US">English</option>
+                <option value="ta-IN">தமிழ் (Tamil)</option>
+            </select>
+        </div>
+    </aside>
+
+    <!-- Workspace -->
+    <main class="workspace">
+        <header class="topbar">
+            <div style="display:flex; align-items:center; gap:8px; font-weight:600; font-size:0.95rem;">
+                <i data-lucide="cpu" style="width:18px; color:var(--accent);"></i>
+                <span>Qwen 2.5 • Instant Vector RAG</span>
+            </div>
+            <button class="tool-btn" onclick="clearCurrentChat()"><i data-lucide="rotate-ccw" style="width:14px;"></i> Clear</button>
+        </header>
+
+        <div id="chatMessages" class="messages-container"></div>
+
+        <div class="input-wrapper">
+            <div class="input-bar">
+                <button id="micBtn" class="circle-btn" onclick="toggleVoiceInput()"><i data-lucide="mic" style="width:18px;"></i></button>
+                <input type="text" id="userInput" placeholder="உங்கள் ஆவணங்களிலிருந்து ஏதேனும் கேளுங்கள்..." onkeydown="if(event.key==='Enter') sendMessage()">
+                <button class="circle-btn send-button" onclick="sendMessage()"><i data-lucide="arrow-up" style="width:18px;"></i></button>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+    let currentSessionId = null;
+    let sessions = JSON.parse(localStorage.getItem('dm_sessions') || '{}');
+    let uploadedFiles = JSON.parse(localStorage.getItem('dm_files') || '[]');
+    let isRecording = false;
+
+    lucide.createIcons();
+    initApp();
+
+    function initApp() {
+        renderFileList();
+        renderChatHistory();
+        const keys = Object.keys(sessions);
+        if (keys.length === 0) createNewChat();
+        else loadChat(keys[0]);
+    }
+
+    // 1. Files Management (Upload & Complete Delete)
+    async function uploadDocuments() {
+        const fileInput = document.getElementById('fileInput');
+        if (!fileInput.files.length) return;
+
+        const formData = new FormData();
+        for (let i = 0; i < fileInput.files.length; i++) {
+            formData.append('files', fileInput.files[i]);
+        }
+
+        try {
+            const res = await fetch('/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (res.ok) {
+                data.files.forEach(f => {
+                    if (!uploadedFiles.includes(f)) uploadedFiles.push(f);
+                });
+                localStorage.setItem('dm_files', JSON.stringify(uploadedFiles));
+                renderFileList();
+            }
+        } catch (e) {
+            alert("Upload failed: " + e);
+        }
+    }
+
+    async function deleteDocument(filename) {
+        if (!confirm(`"${filename}" ஆவணத்தை முழுமையாக நீக்க விரும்புகிறீர்களா?`)) return;
+
+        try {
+            const res = await fetch('/delete-file', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: filename })
+            });
+
+            if (res.ok) {
+                uploadedFiles = uploadedFiles.filter(f => f !== filename);
+                localStorage.setItem('dm_files', JSON.stringify(uploadedFiles));
+                renderFileList();
+            } else {
+                alert("File நீக்குவதில் பிழை ஏற்பட்டது.");
+            }
+        } catch (e) {
+            alert("Error: " + e);
+        }
+    }
+
+    function renderFileList() {
+        const list = document.getElementById('fileList');
+        list.innerHTML = "";
+        uploadedFiles.forEach(file => {
+            const item = document.createElement('div');
+            item.className = 'file-item';
+            item.innerHTML = `
+                <a href="/files/${encodeURIComponent(file)}" target="_blank">
+                    <i data-lucide="file-text" style="width:14px;"></i> ${file}
+                </a>
+                <i data-lucide="trash-2" class="delete-icon" style="width:14px;" onclick="deleteDocument('${file}')"></i>
+            `;
+            list.appendChild(item);
+        });
+        lucide.createIcons();
+    }
+
+    // 2. Chat Sessions Management
+    function createNewChat() {
+        const id = 'chat_' + Date.now();
+        sessions[id] = {
+            title: 'புதிய உரையாடல்',
+            messages: [{
+                role: 'bot',
+                text: 'வணக்கம்! உங்கள் ஆவணங்களைப் பதிவேற்றிவிட்டு கேள்விகளைக் கேட்கலாம். ஆதாரப் பக்கங்களுடன் (Citations) பதில் வழங்கப்படும்.'
+            }]
+        };
+        saveSessions();
+        renderChatHistory();
+        loadChat(id);
+    }
+
+    function loadChat(id) {
+        currentSessionId = id;
+        renderChatHistory();
+        const container = document.getElementById('chatMessages');
+        container.innerHTML = "";
+        sessions[id].messages.forEach(msg => appendMessageUI(msg.text, msg.role, false));
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function deleteChat(e, id) {
+        e.stopPropagation();
+        delete sessions[id];
+        saveSessions();
+        const keys = Object.keys(sessions);
+        if (keys.length > 0) loadChat(keys[0]);
+        else createNewChat();
+    }
+
+    function clearCurrentChat() {
+        if (!currentSessionId) return;
+        sessions[currentSessionId].messages = [];
+        saveSessions();
+        document.getElementById('chatMessages').innerHTML = "";
+    }
+
+    function renderChatHistory() {
+        const list = document.getElementById('chatHistoryList');
+        list.innerHTML = "";
+        for (const [id, session] of Object.entries(sessions)) {
+            const div = document.createElement('div');
+            div.className = `chat-item ${id === currentSessionId ? 'active' : ''}`;
+            div.onclick = () => loadChat(id);
+            div.innerHTML = `
+                <span>${session.title || 'Chat'}</span>
+                <i data-lucide="trash" class="delete-icon" style="width:13px;" onclick="deleteChat(event, '${id}')"></i>
+            `;
+            list.appendChild(div);
+        }
+        lucide.createIcons();
+    }
+
+    function saveSessions() { localStorage.setItem('dm_sessions', JSON.stringify(sessions)); }
+
+    // 3. Streaming Send Message
+    async function sendMessage() {
+        const input = document.getElementById('userInput');
+        const query = input.value.trim();
+        const lang = document.getElementById('languageSelect').value;
+        if (!query) return;
+
+        if (sessions[currentSessionId].messages.length <= 1) {
+            sessions[currentSessionId].title = query.slice(0, 26) + '...';
+            saveSessions();
+            renderChatHistory();
+        }
+
+        appendMessageUI(query, 'user', true);
+        input.value = "";
+
+        const botRow = appendMessageUI("...", 'bot', false);
+        const bubble = botRow.querySelector('.bubble');
+
+        try {
+            const res = await fetch('/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: query, language: lang })
+            });
+
+            bubble.innerHTML = "";
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            let completeResponse = "";
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = decoder.decode(value, { stream: true });
+                completeResponse += chunk;
+                bubble.innerHTML = marked.parse(completeResponse);
+                document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
+            }
+
+            sessions[currentSessionId].messages.push({ role: 'bot', text: completeResponse });
+            saveSessions();
+
+            // Append Quick Action Toolbar (Speak & Copy) - Safe Event Listeners
+            const actions = document.createElement('div');
+            actions.className = 'actions-toolbar';
+
+            // Speak Button
+            const speakBtn = document.createElement('button');
+            speakBtn.className = 'tool-btn';
+            speakBtn.innerHTML = `<i data-lucide="volume-2" style="width:12px;"></i> கேட்க`;
+            speakBtn.addEventListener('click', () => speakText(speakBtn, completeResponse));
+
+            // Copy Button
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'tool-btn';
+            copyBtn.innerHTML = `<i data-lucide="copy" style="width:12px;"></i> நகலெடு`;
+            copyBtn.addEventListener('click', () => copyResponse(copyBtn, completeResponse));
+
+            actions.appendChild(speakBtn);
+            actions.appendChild(copyBtn);
+
+            botRow.querySelector('.bubble-content').appendChild(actions);
+            lucide.createIcons();
+
+        } catch (err) {
+            bubble.innerText = "Error: சர்வரை அணுக முடியவில்லை.";
+        }
+    }
+
+    function appendMessageUI(text, sender, save = false) {
+        if (save && currentSessionId) {
+            sessions[currentSessionId].messages.push({ role: sender, text: text });
+            saveSessions();
+        }
+
+        const container = document.getElementById('chatMessages');
+        const row = document.createElement('div');
+        row.className = `message-row ${sender}`;
+
+        if (sender === 'user') {
+            row.innerHTML = `<div class="bubble-content"><div class="bubble">${escapeHtml(text)}</div></div>`;
+        } else {
+            row.innerHTML = `
+                <div class="avatar bot"><i data-lucide="bot" style="width:18px; color:#fff;"></i></div>
+                <div class="bubble-content">
+                    <div class="bubble">${marked.parse(text)}</div>
+                </div>
+            `;
+        }
+        container.appendChild(row);
+        container.scrollTop = container.scrollHeight;
+        lucide.createIcons();
+        return row;
+    }
+
+    // 4. Fixed Speech-To-Text & Text-To-Speech (Reliable & Natural)
+    function toggleVoiceInput() {
+        const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRec) return alert("உங்கள் Browser-ல் Voice ஆதரவு இல்லை.");
+        
+        const mic = document.getElementById('micBtn');
+        const rec = new SpeechRec();
+        rec.lang = document.getElementById('languageSelect').value;
+
+        rec.onstart = () => mic.classList.add('recording');
+        rec.onend = () => mic.classList.remove('recording');
+        rec.onresult = (e) => {
+            document.getElementById('userInput').value = e.results[0][0].transcript;
+            sendMessage();
+        };
+        rec.start();
+    }
+
+    let speechQueue = [];
+    let isSpeakingActive = false;
+
+    // பிரவுசரின் குரல்களை ஏற்றுதல்
+    let availableVoices = [];
+    function loadVoices() {
+        availableVoices = window.speechSynthesis.getVoices();
+    }
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    loadVoices();
+
+    function speakText(btn, text) {
+        if (!('speechSynthesis' in window)) {
+            return alert("உங்கள் Browser-ல் Voice வசதி இல்லை.");
+        }
+
+        // ஏற்கனவே பேசிக்கொண்டிருந்தால் நிறுத்தவும்
+        if (isSpeakingActive) {
+            stopSpeech();
+            return;
+        }
+
+        stopSpeech();
+
+        // 1. உரையைச் சுத்தப்படுத்துதல் (Markdown, URLs, Signs நீக்குதல்)
+        const cleanText = text
+            .replace(/[*#_`~\[\]\(\)>]/g, '')
+            .replace(/https?:\/\/\S+/g, '')
+            .replace(/[\r\n]+/g, ' ')
+            .trim();
+
+        if (!cleanText) return;
+
+        // 2. வாக்கியங்களாகப் பிரித்தல்
+        const rawSentences = cleanText.split(/([.!?।\n]+)/);
+        speechQueue = [];
+
+        for (let i = 0; i < rawSentences.length; i += 2) {
+            let sentence = rawSentences[i] ? rawSentences[i].trim() : '';
+            if (sentence) {
+                // நீளமான வாக்கியங்களை கமா (,) கொண்டும் சிறு துண்டுகளாகப் பிரித்தல்
+                const subChunks = sentence.split(/,\s*/);
+                subChunks.forEach(sub => {
+                    if (sub.trim()) speechQueue.push(sub.trim());
+                });
+            }
+        }
+
+        if (speechQueue.length === 0) return;
+
+        isSpeakingActive = true;
+        btn.classList.add('active-speak');
+        btn.innerHTML = `<i data-lucide="square" style="width:12px;"></i> நிறுத்த`;
+        lucide.createIcons();
+
+        // 3. வாக்கியங்களை வரிசையாக ஒன்றன்பின் ஒன்றாக ஒலிக்க வைத்தல்
+        playNextChunk(btn);
+    }
+
+    function playNextChunk(btn) {
+        if (!isSpeakingActive || speechQueue.length === 0) {
+            stopSpeech();
+            return;
+        }
+
+        const currentText = speechQueue.shift();
+        const utterance = new SpeechSynthesisUtterance(currentText);
+        
+        // குரல் மற்றும் மொழி தேர்வு (Tamil Voice Selection)
+        const selectedLang = document.getElementById('languageSelect').value;
+        utterance.lang = selectedLang;
+
+        // தமிழ் குரல் பிரவுசரில் இருந்தால் அதை நேரடியாகத் தேர்ந்தெடுத்தல்
+        if (availableVoices.length === 0) availableVoices = window.speechSynthesis.getVoices();
+        
+        if (selectedLang.startsWith('ta')) {
+            const tamilVoice = availableVoices.find(v => v.lang.includes('ta') || v.lang.includes('ta-IN'));
+            if (tamilVoice) {
+                utterance.voice = tamilVoice;
+            }
+        }
+
+        utterance.rate = 0.95; // சரளமாக ஒலிக்க மிதமான வேகம்
+
+        utterance.onend = () => {
+            playNextChunk(btn);
+        };
+
+        utterance.onerror = (e) => {
+            console.warn("Speech chunk error:", e);
+            playNextChunk(btn);
+        };
+
+        window.speechSynthesis.speak(utterance);
+    }
+
+    function stopSpeech() {
+        isSpeakingActive = false;
+        speechQueue = [];
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+        }
+        document.querySelectorAll('.tool-btn').forEach(b => {
+            if (b.innerText.includes('நிறுத்த') || b.classList.contains('active-speak')) {
+                b.classList.remove('active-speak');
+                b.innerHTML = `<i data-lucide="volume-2" style="width:12px;"></i> கேட்க`;
+            }
+        });
+        lucide.createIcons();
+    }
+
+    function copyResponse(btn, text) {
+        navigator.clipboard.writeText(text);
+        const original = btn.innerHTML;
+        btn.innerHTML = `<i data-lucide="check" style="width:12px; color:#81c995;"></i> Copied!`;
+        lucide.createIcons();
+        setTimeout(() => { btn.innerHTML = original; lucide.createIcons(); }, 1500);
+    }
+
+    function escapeHtml(str) {
+        return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+</script>
+
+</body>
+</html>
